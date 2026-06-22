@@ -1,0 +1,727 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>32x32 Grassland Floor Generator</title>
+  </head>
+  <body>
+    <h1>32x32 Grassland Floor Generator</h1>
+
+    <div>
+      <label
+        >Seed:
+        <input id="seedInput" value="grassland-001" />
+      </label>
+
+      <label
+        >Map Width in Tiles:
+        <input id="mapWInput" type="number" value="16" min="1" max="80" />
+      </label>
+
+      <label
+        >Map Height in Tiles:
+        <input id="mapHInput" type="number" value="10" min="1" max="80" />
+      </label>
+
+      <button id="generateBtn">Generate</button>
+      <button id="randomBtn">Random Seed</button>
+    </div>
+
+    <h3>Tileset Preview</h3>
+    <div id="tilesetPreview"></div>
+
+    <h3>Map Preview</h3>
+    <canvas id="mapCanvas" style="image-rendering: pixelated; border: 1px solid #999; background: #000"></canvas>
+
+    <h3>Metadata</h3>
+    <pre id="metadata"></pre>
+
+    <script>
+      /* ============================================================
+   Seeded RNG
+   ============================================================ */
+
+      function hashString(str) {
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < str.length; i++) {
+          h ^= str.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+
+      function mulberry32(seed) {
+        return function () {
+          let t = (seed += 0x6d2b79f5);
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function makeRng(seed) {
+        return mulberry32(hashString(seed));
+      }
+
+      function randInt(rng, min, max) {
+        return Math.floor(rng() * (max - min + 1)) + min;
+      }
+
+      function pick(rng, arr) {
+        return arr[Math.floor(rng() * arr.length)];
+      }
+
+      function pickWeighted(rng, entries) {
+        const total = entries.reduce((s, e) => s + e.weight, 0);
+        let r = rng() * total;
+
+        for (const e of entries) {
+          r -= e.weight;
+          if (r <= 0) return e.value;
+        }
+
+        return entries[entries.length - 1].value;
+      }
+
+      /* ============================================================
+   Color Helpers
+   ============================================================ */
+
+      function hexToRgb(hex) {
+        hex = hex.replace("#", "");
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+
+      function rgbToHex(r, g, b) {
+        const c = (n) =>
+          Math.max(0, Math.min(255, Math.round(n)))
+            .toString(16)
+            .padStart(2, "0");
+        return "#" + c(r) + c(g) + c(b);
+      }
+
+      function mix(a, b, t) {
+        const ca = hexToRgb(a);
+        const cb = hexToRgb(b);
+        return rgbToHex(ca.r + (cb.r - ca.r) * t, ca.g + (cb.g - ca.g) * t, ca.b + (cb.b - ca.b) * t);
+      }
+
+      function shade(hex, amount) {
+        return mix(hex, amount > 0 ? "#ffffff" : "#000000", Math.abs(amount));
+      }
+
+      /* ============================================================
+   Low Frequency Value Noise
+   Tileable over map dimensions.
+   ============================================================ */
+
+      function smoothstep(t) {
+        return t * t * (3 - 2 * t);
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function makeNoiseGrid(seed, gw, gh) {
+        const rng = makeRng(seed);
+        const grid = [];
+
+        for (let y = 0; y < gh; y++) {
+          const row = [];
+          for (let x = 0; x < gw; x++) {
+            row.push(rng());
+          }
+          grid.push(row);
+        }
+
+        return grid;
+      }
+
+      // Tileable value noise. The modulo makes it wrap at map edges.
+      function valueNoiseWrapped(grid, x, y) {
+        const gh = grid.length;
+        const gw = grid[0].length;
+
+        const x0 = Math.floor(x) % gw;
+        const y0 = Math.floor(y) % gh;
+        const x1 = (x0 + 1) % gw;
+        const y1 = (y0 + 1) % gh;
+
+        const fx = smoothstep(x - Math.floor(x));
+        const fy = smoothstep(y - Math.floor(y));
+
+        const a = grid[y0][x0];
+        const b = grid[y0][x1];
+        const c = grid[y1][x0];
+        const d = grid[y1][x1];
+
+        return lerp(lerp(a, b, fx), lerp(c, d, fx), fy);
+      }
+
+      /* ============================================================
+   Tileset Design
+
+   All tiles are walkable grass. Variation is cosmetic:
+   - base grass
+   - short grass
+   - sparse flowers
+   - clover
+   - pebbles
+   - moss
+   - soft path grass
+   - edge-neutral dirt flecks
+
+   No water, holes, cliffs, walls, or obstacles.
+   ============================================================ */
+
+      const TILE_SIZE = 32;
+
+      const TILE_KINDS = [
+        {
+          id: "grass_plain",
+          label: "Plain Grass",
+          weight: 40,
+        },
+        {
+          id: "grass_short",
+          label: "Short Grass",
+          weight: 22,
+        },
+        {
+          id: "grass_tufts",
+          label: "Grass Tufts",
+          weight: 18,
+        },
+        {
+          id: "grass_flowers",
+          label: "Tiny Flowers",
+          weight: 6,
+        },
+        {
+          id: "grass_clover",
+          label: "Clover",
+          weight: 6,
+        },
+        {
+          id: "grass_pebbles",
+          label: "Small Pebbles",
+          weight: 4,
+        },
+        {
+          id: "grass_moss",
+          label: "Mossy Grass",
+          weight: 8,
+        },
+        {
+          id: "grass_soft_path",
+          label: "Soft Worn Grass",
+          weight: 8,
+        },
+      ];
+
+      function generateGrassPalette(rng) {
+        const bases = ["#6faa3f", "#78b84a", "#6ca044", "#7bad4f", "#669c3f"];
+
+        const base = pick(rng, bases);
+
+        return {
+          base,
+          base2: shade(base, 0.035),
+          light: shade(base, 0.1),
+          dark: shade(base, -0.11),
+          darker: shade(base, -0.18),
+          tuft: shade(base, -0.22),
+          moss: mix(base, "#8fae5a", 0.35),
+          path: mix(base, "#a48c5e", 0.3),
+          pathLight: mix(base, "#b7a978", 0.28),
+          flowerA: "#f3d46b",
+          flowerB: "#e98bb6",
+          flowerC: "#d9ecff",
+          pebble: "#8a8d7d",
+          pebbleDark: "#64685d",
+        };
+      }
+
+      function generateTileset(seed) {
+        const rng = makeRng(seed + ":tileset");
+        const palette = generateGrassPalette(rng);
+
+        const tiles = TILE_KINDS.map((kind) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = TILE_SIZE;
+          canvas.height = TILE_SIZE;
+
+          renderGrassTile(canvas, kind.id, palette, seed + ":tile:" + kind.id);
+
+          return {
+            id: kind.id,
+            label: kind.label,
+            weight: kind.weight,
+            canvas,
+          };
+        });
+
+        return {
+          seed,
+          palette,
+          tiles,
+        };
+      }
+
+      /* ============================================================
+   Tile Rendering
+
+   Important tiling rule:
+   Do not draw large unique shapes crossing tile borders.
+   Border pixels use neutral/base pattern.
+   Details are placed in the interior, usually x/y 3..28.
+   This makes every tile safely tileable next to every other tile.
+   ============================================================ */
+
+      function px(ctx, x, y, w, h, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x | 0, y | 0, w | 0, h | 0);
+      }
+
+      function renderGrassTile(canvas, tileId, palette, seed) {
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+
+        const rng = makeRng(seed);
+
+        drawBaseGrass(ctx, palette, rng);
+
+        if (tileId === "grass_plain") {
+          drawFineGrassNoise(ctx, palette, rng, 18);
+        }
+
+        if (tileId === "grass_short") {
+          drawFineGrassNoise(ctx, palette, rng, 28);
+          drawShortGrass(ctx, palette, rng, 12);
+        }
+
+        if (tileId === "grass_tufts") {
+          drawFineGrassNoise(ctx, palette, rng, 18);
+          drawTufts(ctx, palette, rng, 10);
+        }
+
+        if (tileId === "grass_flowers") {
+          drawFineGrassNoise(ctx, palette, rng, 15);
+          drawShortGrass(ctx, palette, rng, 8);
+          drawFlowers(ctx, palette, rng, 6);
+        }
+
+        if (tileId === "grass_clover") {
+          drawFineGrassNoise(ctx, palette, rng, 12);
+          drawClover(ctx, palette, rng, 7);
+        }
+
+        if (tileId === "grass_pebbles") {
+          drawFineGrassNoise(ctx, palette, rng, 12);
+          drawPebbles(ctx, palette, rng, 6);
+        }
+
+        if (tileId === "grass_moss") {
+          drawMossPatches(ctx, palette, rng, 5);
+          drawFineGrassNoise(ctx, palette, rng, 12);
+        }
+
+        if (tileId === "grass_soft_path") {
+          drawSoftPathGrass(ctx, palette, rng);
+          drawFineGrassNoise(ctx, palette, rng, 10);
+        }
+
+        drawVerySubtleTileBorderNeutralizer(ctx, palette);
+      }
+
+      function drawBaseGrass(ctx, p, rng) {
+        px(ctx, 0, 0, 32, 32, p.base);
+
+        // A consistent checker-noise foundation that looks grassy but does
+        // not create visible seams.
+        for (let y = 0; y < 32; y++) {
+          for (let x = 0; x < 32; x++) {
+            const v = (x * 17 + y * 31) % 19;
+            if (v === 0) px(ctx, x, y, 1, 1, p.base2);
+            if (v === 7) px(ctx, x, y, 1, 1, p.dark);
+          }
+        }
+      }
+
+      function drawFineGrassNoise(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 1, 30);
+          const y = randInt(rng, 1, 30);
+          const color = rng() < 0.6 ? p.light : p.dark;
+          px(ctx, x, y, 1, 1, color);
+        }
+      }
+
+      function drawShortGrass(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 3, 28);
+          const y = randInt(rng, 3, 28);
+
+          px(ctx, x, y, 1, 2, p.tuft);
+          if (rng() < 0.5) px(ctx, x + 1, y + 1, 1, 1, p.dark);
+          if (rng() < 0.35) px(ctx, x - 1, y + 1, 1, 1, p.light);
+        }
+      }
+
+      function drawTufts(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 4, 27);
+          const y = randInt(rng, 4, 27);
+
+          px(ctx, x, y, 1, 3, p.tuft);
+          px(ctx, x - 1, y + 1, 1, 2, p.dark);
+          px(ctx, x + 1, y + 1, 1, 2, p.light);
+        }
+      }
+
+      function drawFlowers(ctx, p, rng, count) {
+        const colors = [p.flowerA, p.flowerB, p.flowerC];
+
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 4, 27);
+          const y = randInt(rng, 4, 27);
+          const c = pick(rng, colors);
+
+          px(ctx, x, y + 1, 1, 2, p.tuft);
+          px(ctx, x, y, 1, 1, c);
+
+          if (rng() < 0.35) {
+            px(ctx, x - 1, y, 1, 1, c);
+          }
+        }
+      }
+
+      function drawClover(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 4, 27);
+          const y = randInt(rng, 4, 27);
+          const c = shade(p.base, 0.13);
+
+          px(ctx, x, y, 1, 1, c);
+          px(ctx, x + 1, y, 1, 1, c);
+          px(ctx, x, y + 1, 1, 1, c);
+          px(ctx, x + 1, y + 1, 1, 1, p.dark);
+        }
+      }
+
+      function drawPebbles(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 4, 27);
+          const y = randInt(rng, 4, 27);
+
+          px(ctx, x, y, 2, 1, p.pebble);
+          px(ctx, x, y + 1, 1, 1, p.pebbleDark);
+        }
+      }
+
+      function drawMossPatches(ctx, p, rng, count) {
+        for (let i = 0; i < count; i++) {
+          const x = randInt(rng, 4, 24);
+          const y = randInt(rng, 4, 24);
+          const w = randInt(rng, 3, 6);
+          const h = randInt(rng, 2, 4);
+
+          px(ctx, x, y, w, h, p.moss);
+          px(ctx, x + 1, y, Math.max(1, w - 2), 1, shade(p.moss, 0.06));
+          px(ctx, x, y + h - 1, w, 1, shade(p.moss, -0.05));
+        }
+      }
+
+      function drawSoftPathGrass(ctx, p, rng) {
+        // Soft worn grass patch, not a hard road.
+        // Kept interior-only so arbitrary neighboring tiles still work.
+        const cx = randInt(rng, 12, 20);
+        const cy = randInt(rng, 12, 20);
+
+        for (let y = 5; y <= 26; y++) {
+          for (let x = 5; x <= 26; x++) {
+            const dx = (x - cx) / 10;
+            const dy = (y - cy) / 7;
+            const d = dx * dx + dy * dy;
+
+            if (d < 1.0 && rng() < 0.72) {
+              px(ctx, x, y, 1, 1, d < 0.45 ? p.pathLight : p.path);
+            }
+          }
+        }
+      }
+
+      function drawVerySubtleTileBorderNeutralizer(ctx, p) {
+        // Border remains boring/base. This helps avoid visible seams when
+        // different decorative tiles touch each other.
+        for (let i = 0; i < 32; i++) {
+          px(ctx, i, 0, 1, 1, p.base);
+          px(ctx, i, 31, 1, 1, p.base);
+          px(ctx, 0, i, 1, 1, p.base);
+          px(ctx, 31, i, 1, 1, p.base);
+        }
+      }
+
+      /* ============================================================
+   Map Generation
+
+   The map chooses among the tileset using:
+   - low frequency wrapped noise
+   - weighted distribution
+   - rare decorative clusters
+   - no collision/solid information, because every tile is walkable
+   ============================================================ */
+
+      function generateMap(seed, width, height, tileset) {
+        const rng = makeRng(seed + ":map");
+
+        const map = [];
+
+        // Coarse noise grid. Because valueNoiseWrapped uses modulo,
+        // the map wraps cleanly at edges if repeated.
+        const noiseGrid = makeNoiseGrid(seed + ":noise", 6, 6);
+
+        for (let y = 0; y < height; y++) {
+          const row = [];
+
+          for (let x = 0; x < width; x++) {
+            const nx = (x / Math.max(1, width)) * 6;
+            const ny = (y / Math.max(1, height)) * 6;
+            const n = valueNoiseWrapped(noiseGrid, nx, ny);
+
+            let tileId;
+
+            // Base terrain mood by noise.
+            // Still all walkable grass.
+            if (n < 0.22) {
+              tileId = "grass_moss";
+            } else if (n < 0.36) {
+              tileId = "grass_short";
+            } else if (n < 0.62) {
+              tileId = pickWeighted(rng, [
+                { value: "grass_plain", weight: 60 },
+                { value: "grass_short", weight: 20 },
+                { value: "grass_tufts", weight: 15 },
+                { value: "grass_clover", weight: 5 },
+              ]);
+            } else if (n < 0.78) {
+              tileId = pickWeighted(rng, [
+                { value: "grass_plain", weight: 45 },
+                { value: "grass_tufts", weight: 30 },
+                { value: "grass_clover", weight: 15 },
+                { value: "grass_flowers", weight: 10 },
+              ]);
+            } else {
+              tileId = pickWeighted(rng, [
+                { value: "grass_tufts", weight: 35 },
+                { value: "grass_flowers", weight: 15 },
+                { value: "grass_pebbles", weight: 10 },
+                { value: "grass_plain", weight: 40 },
+              ]);
+            }
+
+            // Very occasional worn grass.
+            // Low frequency prevents it from becoming too busy.
+            if (rng() < 0.035) {
+              tileId = "grass_soft_path";
+            }
+
+            row.push(tileId);
+          }
+
+          map.push(row);
+        }
+
+        // Add a few decorative clusters that remain subtle and walkable.
+        addFlowerClusters(seed, map, width, height);
+        addSoftPathPatches(seed, map, width, height);
+
+        return map;
+      }
+
+      function addFlowerClusters(seed, map, width, height) {
+        const rng = makeRng(seed + ":flower-clusters");
+        const clusterCount = Math.max(1, Math.floor((width * height) / 140));
+
+        for (let c = 0; c < clusterCount; c++) {
+          const cx = randInt(rng, 0, width - 1);
+          const cy = randInt(rng, 0, height - 1);
+          const radius = randInt(rng, 1, 2);
+
+          for (let y = cy - radius; y <= cy + radius; y++) {
+            for (let x = cx - radius; x <= cx + radius; x++) {
+              if (x < 0 || y < 0 || x >= width || y >= height) continue;
+
+              const dx = x - cx;
+              const dy = y - cy;
+
+              if (dx * dx + dy * dy <= radius * radius + 0.5 && rng() < 0.55) {
+                map[y][x] = "grass_flowers";
+              }
+            }
+          }
+        }
+      }
+
+      function addSoftPathPatches(seed, map, width, height) {
+        const rng = makeRng(seed + ":path-patches");
+        const patchCount = Math.max(1, Math.floor((width * height) / 180));
+
+        for (let c = 0; c < patchCount; c++) {
+          const cx = randInt(rng, 0, width - 1);
+          const cy = randInt(rng, 0, height - 1);
+
+          for (let i = 0; i < randInt(rng, 3, 7); i++) {
+            const x = cx + randInt(rng, -2, 2);
+            const y = cy + randInt(rng, -2, 2);
+
+            if (x < 0 || y < 0 || x >= width || y >= height) continue;
+
+            if (rng() < 0.65) {
+              map[y][x] = "grass_soft_path";
+            }
+          }
+        }
+      }
+
+      /* ============================================================
+   Map Rendering
+   ============================================================ */
+
+      function renderTilesetPreview(tileset) {
+        const div = document.getElementById("tilesetPreview");
+        div.innerHTML = "";
+
+        for (const tile of tileset.tiles) {
+          const wrapper = document.createElement("div");
+          wrapper.style.display = "inline-block";
+          wrapper.style.margin = "4px";
+          wrapper.style.textAlign = "center";
+
+          const c = document.createElement("canvas");
+          c.width = 32;
+          c.height = 32;
+          c.style.width = "96px";
+          c.style.height = "96px";
+          c.style.imageRendering = "pixelated";
+          c.style.border = "1px solid #999";
+
+          c.getContext("2d").drawImage(tile.canvas, 0, 0);
+
+          const label = document.createElement("div");
+          label.textContent = tile.label;
+          label.style.fontSize = "12px";
+
+          wrapper.appendChild(c);
+          wrapper.appendChild(label);
+          div.appendChild(wrapper);
+        }
+      }
+
+      function renderMap(canvas, map, tileset, scale) {
+        const h = map.length;
+        const w = map[0].length;
+
+        canvas.width = w * TILE_SIZE;
+        canvas.height = h * TILE_SIZE;
+
+        canvas.style.width = w * TILE_SIZE * scale + "px";
+        canvas.style.height = h * TILE_SIZE * scale + "px";
+
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+
+        const tileLookup = {};
+        for (const tile of tileset.tiles) {
+          tileLookup[tile.id] = tile.canvas;
+        }
+
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const id = map[y][x];
+            ctx.drawImage(tileLookup[id], x * TILE_SIZE, y * TILE_SIZE);
+          }
+        }
+      }
+
+      /* ============================================================
+   Metadata
+   ============================================================ */
+
+      function countTiles(map) {
+        const counts = {};
+
+        for (const row of map) {
+          for (const id of row) {
+            counts[id] = (counts[id] || 0) + 1;
+          }
+        }
+
+        return counts;
+      }
+
+      /* ============================================================
+   App Wiring
+   ============================================================ */
+
+      const seedInput = document.getElementById("seedInput");
+      const mapWInput = document.getElementById("mapWInput");
+      const mapHInput = document.getElementById("mapHInput");
+      const mapCanvas = document.getElementById("mapCanvas");
+      const metadata = document.getElementById("metadata");
+
+      function generateApp() {
+        const seed = seedInput.value || "grassland";
+        const mapW = Math.max(1, Math.min(80, parseInt(mapWInput.value || "16", 10)));
+        const mapH = Math.max(1, Math.min(80, parseInt(mapHInput.value || "10", 10)));
+
+        mapWInput.value = mapW;
+        mapHInput.value = mapH;
+
+        const tileset = generateTileset(seed);
+        const map = generateMap(seed, mapW, mapH, tileset);
+
+        renderTilesetPreview(tileset);
+
+        // Auto scale: small maps shown larger, big maps kept manageable.
+        let scale = 2;
+        if (mapW <= 16 && mapH <= 12) scale = 2;
+        if (mapW <= 10 && mapH <= 8) scale = 3;
+        if (mapW >= 32 || mapH >= 24) scale = 1;
+
+        renderMap(mapCanvas, map, tileset, scale);
+
+        metadata.textContent = JSON.stringify(
+          {
+            seed,
+            tileSize: "32x32",
+            mapSizeInTiles: {
+              width: mapW,
+              height: mapH,
+            },
+            accessibility: "all tiles are walkable",
+            style: "grassland",
+            tileability: "all decorative tiles are edge-neutral and can neighbor any other tile",
+            tileCounts: countTiles(map),
+          },
+          null,
+          2,
+        );
+      }
+
+      document.getElementById("generateBtn").onclick = generateApp;
+
+      document.getElementById("randomBtn").onclick = () => {
+        seedInput.value = "grassland-" + Math.floor(Math.random() * 1e9);
+        generateApp();
+      };
+
+      generateApp();
+    </script>
+  </body>
+</html>
