@@ -17,6 +17,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewChar = document.getElementById("previewChar") as HTMLElement;
   const charPreviewBox = document.getElementById("charPreviewBox") as HTMLDivElement;
 
+  const editModeBtn = document.getElementById("editModeBtn") as HTMLButtonElement;
+  const playModeBtn = document.getElementById("playModeBtn") as HTMLButtonElement;
+
+  let currentMode: "edit" | "play" = "edit";
+  let activeSpeechBubble: HTMLElement | null = null;
+  let charCounter = 0;
+
   const GRID_SCALE = 2; // Fixed multiplier for pixel art sharpness
   const MAP_WIDTH = 16;
   const MAP_HEIGHT = 10;
@@ -129,6 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Make a character-element draggable on the board
   function makeDraggable(charEl: HTMLElement) {
     charEl.addEventListener("mousedown", (e) => {
+      if (currentMode !== "edit") return; // Only drag in edit mode
       if (e.button !== 0) return; // Only drag with left click
       e.preventDefault();
       const startTileX = parseFloat(charEl.style.getPropertyValue("--x") || "0");
@@ -140,15 +148,28 @@ document.addEventListener("DOMContentLoaded", () => {
   // Double click to randomize a single character
   function makeInteractive(charEl: HTMLElement) {
     charEl.addEventListener("dblclick", (e) => {
+      if (currentMode !== "edit") return; // Only randomize in edit mode
       e.stopPropagation();
       const newSeed = "seed-" + Math.floor(Math.random() * 1e9);
       charEl.setAttribute("seed", newSeed);
     });
   }
 
+  // Make a character talkable in play mode
+  function makeTalkable(charEl: HTMLElement) {
+    charEl.addEventListener("click", (e) => {
+      if (currentMode !== "play") return;
+      e.stopPropagation();
+      triggerSpeechBubble(charEl);
+    });
+  }
+
   // Create a character element and place it
   function spawnCharacter(seed: string, tx: number, ty: number) {
+    const id = "char-node-" + ++charCounter;
     const charEl = document.createElement("character-element") as HTMLElement;
+    charEl.id = id;
+    charEl.style.setProperty("anchor-name", `--${id}`);
     charEl.setAttribute("seed", seed);
     charEl.style.setProperty("--x", tx.toString());
     charEl.style.setProperty("--y", ty.toString());
@@ -156,6 +177,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     makeDraggable(charEl);
     makeInteractive(charEl);
+    makeTalkable(charEl);
 
     board.appendChild(charEl);
     return charEl;
@@ -169,6 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Drag and drop from preview box
   charPreviewBox.addEventListener("mousedown", (e) => {
+    if (currentMode !== "edit") return; // Only spawn in edit mode
     if (e.button !== 0) return; // Left click only
     e.preventDefault();
 
@@ -222,6 +245,83 @@ document.addEventListener("DOMContentLoaded", () => {
     const randSeed = "townsquare-" + Math.floor(Math.random() * 1e5);
     updateFloorSeed(randSeed);
     updateBoardDimensions();
+  });
+
+  function removeActiveSpeechBubble() {
+    if (activeSpeechBubble) {
+      activeSpeechBubble.remove();
+      activeSpeechBubble = null;
+    }
+  }
+
+  function triggerSpeechBubble(charEl: HTMLElement) {
+    const id = charEl.id;
+    if (activeSpeechBubble && activeSpeechBubble.getAttribute("anchor") === id) {
+      removeActiveSpeechBubble();
+      return;
+    }
+
+    removeActiveSpeechBubble();
+
+    const bubble = document.createElement("speech-bubble-element");
+    bubble.setAttribute("anchor", id);
+
+    const seed = charEl.getAttribute("seed") || "";
+    let msg = "hello!";
+    if (seed.includes("wizard")) {
+      msg = "Hello! I am sensing strong magical powers around here.";
+    } else if (seed.includes("alien")) {
+      msg = "Hello! Do you know how to build a spaceship? I am lost...";
+    } else if (seed.includes("knight") || seed.includes("warrior") || seed.includes("orc")) {
+      msg = "Hello, traveler! The town square is safe under my watch.";
+    } else {
+      const randomPhrases = [
+        "hello!",
+        "Hello! What a beautiful day to visit the town square!",
+        "Hello, traveler! Have you seen any dragons lately?",
+        "Hello! I hope you're having an amazing day!",
+      ];
+      msg = randomPhrases[Math.floor(Math.random() * randomPhrases.length)];
+    }
+
+    bubble.textContent = msg;
+    board.appendChild(bubble);
+    activeSpeechBubble = bubble;
+  }
+
+  function setMode(mode: "edit" | "play") {
+    currentMode = mode;
+    document.body.setAttribute("data-mode", mode);
+
+    const previewHelp = document.querySelector(".preview-help") as HTMLElement;
+
+    if (mode === "edit") {
+      editModeBtn.classList.add("active");
+      playModeBtn.classList.remove("active");
+      if (previewHelp) {
+        previewHelp.textContent = "Click to randomize. Drag onto map to spawn!";
+      }
+      removeActiveSpeechBubble();
+    } else {
+      playModeBtn.classList.add("active");
+      editModeBtn.classList.remove("active");
+      if (previewHelp) {
+        previewHelp.textContent = "Play Mode Active! Click on characters to talk to them.";
+      }
+    }
+  }
+
+  editModeBtn.addEventListener("click", () => setMode("edit"));
+  playModeBtn.addEventListener("click", () => setMode("play"));
+
+  // Click anywhere to dismiss speech bubble in play mode
+  document.addEventListener("click", (e) => {
+    if (currentMode === "play") {
+      const target = e.target as HTMLElement;
+      if (!target.closest("character-element") && !target.closest("speech-bubble-element")) {
+        removeActiveSpeechBubble();
+      }
+    }
   });
 
   // Initialize

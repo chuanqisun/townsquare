@@ -228,6 +228,80 @@ p {
   background: #d97706;
 }
 
+/* Mode Toggle Container */
+.mode-toggle-container {
+  display: flex;
+  gap: 8px;
+  background: var(--code-bg);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--sans);
+  flex: 1;
+  background: transparent;
+  color: var(--text);
+}
+
+.mode-btn:hover {
+  color: var(--text-h);
+  background: var(--border);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mode-btn .mode-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Play Mode specific styling overrides */
+body[data-mode="play"] .game-board character-element {
+  cursor: pointer !important;
+}
+
+body[data-mode="play"] .preview-box-container {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+body[data-mode="play"] #regenFloorBtn {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* Speech Bubble Element Anchor Positioning (Light DOM rule to share tree-scope with anchor-name) */
+speech-bubble-element {
+  position: absolute;
+  position-anchor: var(--character-anchor);
+  bottom: anchor(top);
+  left: anchor(center);
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  position-try-fallbacks: flip-block;
+  z-index: 1000;
+  pointer-events: none; /* Make sure bubble itself doesn't block clicking */
+}
+
 .divider {
   border: 0;
   border-top: 1px solid var(--border);
