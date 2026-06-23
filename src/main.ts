@@ -1,10 +1,12 @@
 import { CharacterElement } from "./character-element";
 import { FloorElement } from "./floor-element";
+import { SpeechBubbleElement } from "./speech-bubble-element";
 import "./style.css";
 
 // Define the custom elements
 CharacterElement.define();
 FloorElement.define();
+SpeechBubbleElement.define();
 
 document.addEventListener("DOMContentLoaded", () => {
   const floor = document.getElementById("floor") as FloorElement;
