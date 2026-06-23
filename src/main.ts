@@ -11,7 +11,6 @@ SpeechBubbleElement.define();
 document.addEventListener("DOMContentLoaded", () => {
   const floor = document.getElementById("floor") as FloorElement;
   const board = document.getElementById("gameBoard") as HTMLDivElement;
-  const dimensionsLabel = document.getElementById("dimensionsLabel") as HTMLSpanElement;
   const regenFloorBtn = document.getElementById("regenFloorBtn") as HTMLButtonElement;
 
   const previewChar = document.getElementById("previewChar") as HTMLElement;
@@ -40,8 +39,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update floor element attributes
     floor.setAttribute("width", w.toString());
     floor.setAttribute("height", h.toString());
-
-    dimensionsLabel.textContent = `${w * 32 * GRID_SCALE} x ${h * 32 * GRID_SCALE} px (${w}x${h} tiles, ${GRID_SCALE}x scale)`;
   }
 
   // Update floor seed
