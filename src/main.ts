@@ -9,23 +9,20 @@ FloorElement.define();
 document.addEventListener("DOMContentLoaded", () => {
   const floor = document.getElementById("floor") as FloorElement;
   const board = document.getElementById("gameBoard") as HTMLDivElement;
-  const worldSeedInput = document.getElementById("worldSeed") as HTMLInputElement;
-  const mapWidthInput = document.getElementById("mapWidth") as HTMLInputElement;
-  const mapHeightInput = document.getElementById("mapHeight") as HTMLInputElement;
   const dimensionsLabel = document.getElementById("dimensionsLabel") as HTMLSpanElement;
-
   const regenFloorBtn = document.getElementById("regenFloorBtn") as HTMLButtonElement;
-  const randomFloorBtn = document.getElementById("randomFloorBtn") as HTMLButtonElement;
-  const addCharBtn = document.getElementById("addCharBtn") as HTMLButtonElement;
-  const clearCharBtn = document.getElementById("clearCharBtn") as HTMLButtonElement;
-  const scrambleCharBtn = document.getElementById("scrambleCharBtn") as HTMLButtonElement;
+
+  const previewChar = document.getElementById("previewChar") as HTMLElement;
+  const charPreviewBox = document.getElementById("charPreviewBox") as HTMLDivElement;
 
   const GRID_SCALE = 2; // Fixed multiplier for pixel art sharpness
+  const MAP_WIDTH = 16;
+  const MAP_HEIGHT = 10;
 
   // Initialize CSS Grid variables on the board
   function updateBoardDimensions() {
-    const w = parseInt(mapWidthInput.value, 10) || 16;
-    const h = parseInt(mapHeightInput.value, 10) || 10;
+    const w = MAP_WIDTH;
+    const h = MAP_HEIGHT;
 
     board.style.setProperty("--grid-width", w.toString());
     board.style.setProperty("--grid-height", h.toString());
@@ -36,31 +33,35 @@ document.addEventListener("DOMContentLoaded", () => {
     floor.setAttribute("height", h.toString());
 
     dimensionsLabel.textContent = `${w * 32 * GRID_SCALE} x ${h * 32 * GRID_SCALE} px (${w}x${h} tiles, ${GRID_SCALE}x scale)`;
-
-    // Keep characters inside the board if size is shrunk
-    const chars = board.querySelectorAll("character-element");
-    chars.forEach((char) => {
-      const charEl = char as HTMLElement;
-      const cx = parseInt(charEl.style.getPropertyValue("--x") || "0", 10);
-      const cy = parseInt(charEl.style.getPropertyValue("--y") || "0", 10);
-      if (cx >= w) charEl.style.setProperty("--x", (w - 1).toString());
-      if (cy >= h) charEl.style.setProperty("--y", (h - 1).toString());
-    });
   }
 
   // Update floor seed
   function updateFloorSeed(seed: string) {
     floor.setAttribute("seed", seed);
-    worldSeedInput.value = seed;
   }
 
-  // Make a character-element draggable on the board
-  function makeDraggable(charEl: HTMLElement) {
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
-    let startTileX = 0;
-    let startTileY = 0;
+  // Convert screen coordinates to tile coordinates
+  function screenToTile(clientX: number, clientY: number): { tx: number; ty: number } {
+    const rect = board.getBoundingClientRect();
+    const relativeX = clientX - rect.left;
+    const relativeY = clientY - rect.top;
+    const tileSize = 32 * GRID_SCALE;
+    const tx = relativeX / tileSize;
+    const ty = relativeY / tileSize;
+    return { tx, ty };
+  }
+
+  // Dragging logic that can be programmatically started
+  function startDragging(
+    charEl: HTMLElement,
+    clientX: number,
+    clientY: number,
+    startTileX: number,
+    startTileY: number,
+  ) {
+    let isDragging = true;
+    let startX = clientX;
+    let startY = clientY;
 
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
@@ -76,14 +77,21 @@ document.addEventListener("DOMContentLoaded", () => {
       let targetTileX = startTileX + deltaTileX;
       let targetTileY = startTileY + deltaTileY;
 
-      const w = parseInt(mapWidthInput.value, 10) || 16;
-      const h = parseInt(mapHeightInput.value, 10) || 10;
+      const w = MAP_WIDTH;
+      const h = MAP_HEIGHT;
 
-      targetTileX = Math.max(0, Math.min(w - 1, targetTileX));
-      targetTileY = Math.max(0, Math.min(h - 1, targetTileY));
+      const displayX = Math.max(-2, Math.min(w + 1, targetTileX));
+      const displayY = Math.max(-2, Math.min(h + 1, targetTileY));
 
-      charEl.style.setProperty("--x", targetTileX.toString());
-      charEl.style.setProperty("--y", targetTileY.toString());
+      charEl.style.setProperty("--x", displayX.toString());
+      charEl.style.setProperty("--y", displayY.toString());
+
+      const isOffMap = targetTileX < -0.4 || targetTileX > w - 0.6 || targetTileY < -0.4 || targetTileY > h - 0.6;
+      if (isOffMap) {
+        charEl.style.opacity = "0.4";
+      } else {
+        charEl.style.opacity = "1";
+      }
     };
 
     const onMouseUp = () => {
@@ -94,25 +102,36 @@ document.addEventListener("DOMContentLoaded", () => {
       const currentTileX = parseFloat(charEl.style.getPropertyValue("--x") || "0");
       const currentTileY = parseFloat(charEl.style.getPropertyValue("--y") || "0");
 
-      charEl.style.setProperty("--x", Math.round(currentTileX).toString());
-      charEl.style.setProperty("--y", Math.round(currentTileY).toString());
+      const w = MAP_WIDTH;
+      const h = MAP_HEIGHT;
+
+      const isOffMap = currentTileX < -0.4 || currentTileX > w - 0.6 || currentTileY < -0.4 || currentTileY > h - 0.6;
+
+      if (isOffMap) {
+        charEl.remove();
+      } else {
+        charEl.style.opacity = "1";
+        charEl.style.setProperty("--x", Math.round(currentTileX).toString());
+        charEl.style.setProperty("--y", Math.round(currentTileY).toString());
+      }
 
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
 
+    charEl.style.cursor = "grabbing";
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
+  // Make a character-element draggable on the board
+  function makeDraggable(charEl: HTMLElement) {
     charEl.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return; // Only drag with left click
       e.preventDefault();
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      startTileX = parseFloat(charEl.style.getPropertyValue("--x") || "0");
-      startTileY = parseFloat(charEl.style.getPropertyValue("--y") || "0");
-      charEl.style.cursor = "grabbing";
-
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
+      const startTileX = parseFloat(charEl.style.getPropertyValue("--x") || "0");
+      const startTileY = parseFloat(charEl.style.getPropertyValue("--y") || "0");
+      startDragging(charEl, e.clientX, e.clientY, startTileX, startTileY);
     });
   }
 
@@ -137,54 +156,76 @@ document.addEventListener("DOMContentLoaded", () => {
     makeInteractive(charEl);
 
     board.appendChild(charEl);
+    return charEl;
   }
 
-  // Spawn random character within current dimensions
-  function spawnRandomCharacter() {
-    const w = parseInt(mapWidthInput.value, 10) || 16;
-    const h = parseInt(mapHeightInput.value, 10) || 10;
-    const tx = Math.floor(Math.random() * w);
-    const ty = Math.floor(Math.random() * h);
+  // Randomize preview character seed
+  function randomizePreview() {
     const randSeed = "char-" + Math.floor(Math.random() * 1e9);
-    spawnCharacter(randSeed, tx, ty);
+    previewChar.setAttribute("seed", randSeed);
   }
+
+  // Drag and drop from preview box
+  charPreviewBox.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return; // Left click only
+    e.preventDefault();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let hasDragged = false;
+    let dragSessionStarted = false;
+    let tempChar: HTMLElement | null = null;
+
+    const onMouseMovePreview = (moveEvent: MouseEvent) => {
+      if (dragSessionStarted) return;
+
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 8) {
+        hasDragged = true;
+        dragSessionStarted = true;
+
+        const seed = previewChar.getAttribute("seed") || "char-init";
+        const { tx, ty } = screenToTile(moveEvent.clientX, moveEvent.clientY);
+        const startTileX = tx - 0.5;
+        const startTileY = ty - 0.5;
+
+        tempChar = spawnCharacter(seed, startTileX, startTileY);
+        startDragging(tempChar, moveEvent.clientX, moveEvent.clientY, startTileX, startTileY);
+
+        randomizePreview();
+
+        window.removeEventListener("mousemove", onMouseMovePreview);
+        window.removeEventListener("mouseup", onMouseUpPreview);
+      }
+    };
+
+    const onMouseUpPreview = () => {
+      window.removeEventListener("mousemove", onMouseMovePreview);
+      window.removeEventListener("mouseup", onMouseUpPreview);
+
+      if (!hasDragged) {
+        randomizePreview();
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMovePreview);
+    window.addEventListener("mouseup", onMouseUpPreview);
+  });
 
   // Wire up event listeners
   regenFloorBtn.addEventListener("click", () => {
-    updateBoardDimensions();
-    updateFloorSeed(worldSeedInput.value);
-  });
-
-  randomFloorBtn.addEventListener("click", () => {
     const randSeed = "townsquare-" + Math.floor(Math.random() * 1e5);
     updateFloorSeed(randSeed);
     updateBoardDimensions();
   });
 
-  addCharBtn.addEventListener("click", () => {
-    spawnRandomCharacter();
-  });
-
-  clearCharBtn.addEventListener("click", () => {
-    const chars = board.querySelectorAll("character-element");
-    chars.forEach((char) => char.remove());
-  });
-
-  scrambleCharBtn.addEventListener("click", () => {
-    const chars = board.querySelectorAll("character-element");
-    chars.forEach((char) => {
-      const randSeed = "scrambled-" + Math.floor(Math.random() * 1e9);
-      char.setAttribute("seed", randSeed);
-    });
-  });
-
-  // Watch input changes
-  mapWidthInput.addEventListener("change", updateBoardDimensions);
-  mapHeightInput.addEventListener("change", updateBoardDimensions);
-
   // Initialize
   updateBoardDimensions();
   updateFloorSeed("townsquare-001");
+  randomizePreview();
 
   // Spawn initial characters
   spawnCharacter("hero-knight", 4, 3);

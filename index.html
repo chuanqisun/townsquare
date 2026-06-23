@@ -21,45 +21,18 @@
     <main class="app-container">
       <section class="controls-card">
         <h2>World Settings</h2>
-        <div class="control-group">
-          <label for="worldSeed">Floor Seed:</label>
-          <input type="text" id="worldSeed" value="townsquare-001" placeholder="Enter seed..." />
-        </div>
         <div class="control-row">
-          <div class="control-group">
-            <label for="mapWidth">Width (Tiles):</label>
-            <input type="number" id="mapWidth" value="16" min="8" max="40" />
-          </div>
-          <div class="control-group">
-            <label for="mapHeight">Height (Tiles):</label>
-            <input type="number" id="mapHeight" value="10" min="6" max="25" />
-          </div>
-        </div>
-        <div class="control-row">
-          <button id="regenFloorBtn" class="btn primary">Regenerate Floor</button>
-          <button id="randomFloorBtn" class="btn secondary">Random Seed</button>
+          <button id="regenFloorBtn" class="btn primary">Generate Floor</button>
         </div>
 
         <hr class="divider" />
 
-        <h2>Character Settings</h2>
-        <div class="control-row">
-          <button id="addCharBtn" class="btn success">Add Character</button>
-          <button id="clearCharBtn" class="btn danger">Clear Characters</button>
-        </div>
-        <div class="control-row">
-          <button id="scrambleCharBtn" class="btn warning">Randomize Seeds</button>
-        </div>
-
-        <hr class="divider" />
-
-        <div class="info-panel">
-          <h3>Interactive Guide</h3>
-          <ul>
-            <li>Drag characters around to reposition them!</li>
-            <li>Double-click a character to change its identity seed.</li>
-            <li>All tiles are walkable, and edge-neutral.</li>
-          </ul>
+        <h2>Next Character</h2>
+        <div class="preview-box-container">
+          <div id="charPreviewBox" class="preview-box" title="Click to randomize!">
+            <character-element id="previewChar" seed="char-init" background></character-element>
+          </div>
+          <p class="preview-help">Click to randomize. Drag onto map to spawn!</p>
         </div>
       </section>
 
