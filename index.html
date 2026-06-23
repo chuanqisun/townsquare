@@ -4,10 +4,83 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>townsquare</title>
+    <title>TownSquare - Pixel Art Generator</title>
   </head>
   <body>
-    <div id="app"></div>
+    <header class="app-header">
+      <div class="logo-area">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
+        </svg>
+        <h1>TownSquare</h1>
+      </div>
+      <p class="subtitle">Procedural 32x32 Pixel Art World Visualizer</p>
+    </header>
+
+    <main class="app-container">
+      <section class="controls-card">
+        <h2>World Settings</h2>
+        <div class="control-group">
+          <label for="worldSeed">Floor Seed:</label>
+          <input type="text" id="worldSeed" value="townsquare-001" placeholder="Enter seed..." />
+        </div>
+        <div class="control-row">
+          <div class="control-group">
+            <label for="mapWidth">Width (Tiles):</label>
+            <input type="number" id="mapWidth" value="16" min="8" max="40" />
+          </div>
+          <div class="control-group">
+            <label for="mapHeight">Height (Tiles):</label>
+            <input type="number" id="mapHeight" value="10" min="6" max="25" />
+          </div>
+        </div>
+        <div class="control-row">
+          <button id="regenFloorBtn" class="btn primary">Regenerate Floor</button>
+          <button id="randomFloorBtn" class="btn secondary">Random Seed</button>
+        </div>
+
+        <hr class="divider" />
+
+        <h2>Character Settings</h2>
+        <div class="control-row">
+          <button id="addCharBtn" class="btn success">Add Character</button>
+          <button id="clearCharBtn" class="btn danger">Clear Characters</button>
+        </div>
+        <div class="control-row">
+          <button id="scrambleCharBtn" class="btn warning">Randomize Seeds</button>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="info-panel">
+          <h3>Interactive Guide</h3>
+          <ul>
+            <li>Drag characters around to reposition them!</li>
+            <li>Double-click a character to change its identity seed.</li>
+            <li>All tiles are walkable, and edge-neutral.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="viewport-card">
+        <div class="viewport-header">
+          <span class="status-indicator">● Active Sandbox</span>
+          <span class="dimensions-tag" id="dimensionsLabel">1024 x 640 px (16x10 tiles, 2x scale)</span>
+        </div>
+        <div class="viewport-canvas-wrapper">
+          <div id="gameBoard" class="game-board">
+            <floor-element id="floor" seed="townsquare-001" width="16" height="10"></floor-element>
+            <!-- Characters will be dynamically placed here -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>Powered by Web Components & Seeded mulberry32 RNG. Created with ❤️ for TownSquare.</p>
+    </footer>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
