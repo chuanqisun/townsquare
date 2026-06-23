@@ -124,10 +124,25 @@ const mouthTable: Trait[] = [
 
 const hairTable: Trait[] = [
   { id: "none", label: "None", weight: 24 },
-  { id: "short", label: "Short Hair", weight: 20, customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id) },
+  {
+    id: "short",
+    label: "Short Hair",
+    weight: 20,
+    customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id),
+  },
   { id: "bob", label: "Bob Hair", weight: 12, customValid: (ctx) => ["human", "orc"].includes(ctx.species.id) },
-  { id: "spiky", label: "Spiky Hair", weight: 12, customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id) },
-  { id: "mohawk", label: "Mohawk", weight: 8, customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id) },
+  {
+    id: "spiky",
+    label: "Spiky Hair",
+    weight: 12,
+    customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id),
+  },
+  {
+    id: "mohawk",
+    label: "Mohawk",
+    weight: 8,
+    customValid: (ctx) => ["human", "orc", "demon"].includes(ctx.species.id),
+  },
   { id: "tendrils", label: "Tendrils", weight: 6, requires: ["species:alien"] },
   { id: "bolts", label: "Head Bolts", weight: 8, requires: ["species:robot"] },
   { id: "flame", label: "Flame Hair", weight: 3, requires: ["species:demon"] },
@@ -165,7 +180,8 @@ const itemTable: Trait[] = [
     id: "orb",
     label: "Orb",
     weight: 3,
-    customValid: (ctx) => ["wizard", "alien", "demon"].includes(ctx.class.id) || ["alien", "demon"].includes(ctx.species.id),
+    customValid: (ctx) =>
+      ["wizard", "alien", "demon"].includes(ctx.class.id) || ["alien", "demon"].includes(ctx.species.id),
   },
   { id: "flower", label: "Flower", weight: 5 },
 ];
