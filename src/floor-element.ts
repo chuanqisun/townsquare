@@ -548,9 +548,13 @@ export class FloorElement extends HTMLElement {
     style.textContent = `
       :host {
         display: inline-block;
+        width: 100%;
+        height: 100%;
       }
       canvas {
         display: block;
+        width: 100%;
+        height: 100%;
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
